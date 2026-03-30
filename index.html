@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Squat Counter - MediaPipe Pose</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: white;
+      text-align: center;
+    }
+
+    .wrap {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    .stage {
+      position: relative;
+      width: 100%;
+      max-width: 720px;
+      margin: 16px auto;
+      aspect-ratio: 3 / 4;
+      background: black;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+
+    video, canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    button {
+      padding: 12px 18px;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 6px;
+    }
+
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .card {
+      background: #1d1d1d;
+      padding: 12px 16px;
+      border-radius: 12px;
+      min-width: 120px;
+    }
+
+    .label {
+      font-size: 13px;
+      opacity: 0.8;
+    }
+
+    .value {
+      font-size: 28px;
+      font-weight: bold;
+      margin-top: 4px;
+    }
+
+    #status {
+      margin-top: 12px;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .hint {
+      max-width: 720px;
+      margin: 12px auto 0;
+      font-size: 14px;
+      opacity: 0.85;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Squat Counter</h1>
+    <p>Open in Safari on iPhone, tap Start Camera, then squat sideways to the camera.</p>
+
+    <button id="startBtn">Start Camera</button>
+    <button id="resetBtn">Reset Count</button>
+
+    <div class="stats">
+      <div class="card">
+        <div class="label">Reps</div>
+        <div class="value" id="repCount">0</div>
+      </div>
+      <div class="card">
+        <div class="label">Stage</div>
+        <div class="value" id="stageText">-</div>
+      </div>
+      <div class="card">
+        <div class="label">Knee Angle</div>
+        <div class="value" id="angleText">-</div>
+      </div>
+    </div>
+
+    <div id="status">Waiting...</div>
+
+    <div class="stage">
+      <video id="video" playsinline autoplay muted></video>
+      <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="hint">
+      Best results: stand far enough back so your full body is visible, use good lighting,
+      and turn slightly sideways so one leg is easy to track.
+    </div>
+  </div>
+
+  <script type="module">
+    import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
+
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    const startBtn = document.getElementById("startBtn");
+    const resetBtn = document.getElementById("resetBtn");
+
+    const statusEl = document.getElementById("status");
+    const repCountEl = document.getElementById("repCount");
+    const stageTextEl = document.getElementById("stageText");
+    const angleTextEl = document.getElementById("angleText");
+
+    let poseLandmarker;
+    let running = false;
+    let lastVideoTime = -1;
+
+    let repCount = 0;
+    let stage = "up"; // "up" or "down"
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function updateUI(angle = null) {
+      repCountEl.textContent = repCount;
+      stageTextEl.textContent = stage;
+      angleTextEl.textContent = angle === null ? "-" : Math.round(angle) + "°";
+    }
+
+    async function setupPoseLandmarker() {
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+      );
+
+      poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath:
+            "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
+        },
+        runningMode: "VIDEO",
+        numPoses: 1
+      });
+    }
+
+    async function startCamera() {
+      try {
+        setStatus("Requesting camera...");
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "user",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+
+        video.srcObject = stream;
+
+        await new Promise((resolve) => {
+          video.onloadedmetadata = () => resolve();
+        });
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        setStatus("Camera started");
+        running = true;
+        requestAnimationFrame(loop);
+      } catch (err) {
+        console.error(err);
+        setStatus("Camera error: " + err.message);
+      }
+    }
+
+    function getPixelPoint(landmark) {
+      return {
+        x: landmark.x * canvas.width,
+        y: landmark.y * canvas.height
+      };
+    }
+
+    function drawPoint(x, y, radius = 5) {
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = "#00ff88";
+      ctx.fill();
+    }
+
+    function drawLine(a, b) {
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#00ff88";
+      ctx.stroke();
+    }
+
+    function calculateAngle(a, b, c) {
+      const ab = { x: a.x - b.x, y: a.y - b.y };
+      const cb = { x: c.x - b.x, y: c.y - b.y };
+
+      const dot = ab.x * cb.x + ab.y * cb.y;
+      const magAB = Math.sqrt(ab.x * ab.x + ab.y * ab.y);
+      const magCB = Math.sqrt(cb.x * cb.x + cb.y * cb.y);
+
+      if (magAB === 0 || magCB === 0) return null;
+
+      let cosine = dot / (magAB * magCB);
+      cosine = Math.max(-1, Math.min(1, cosine));
+
+      const angle = Math.acos(cosine) * (180 / Math.PI);
+      return angle;
+    }
+
+    function pickBetterSide(landmarks) {
+      // MediaPipe Pose indices:
+      // left hip 23, left knee 25, left ankle 27
+      // right hip 24, right knee 26, right ankle 28
+
+      const left = {
+        hip: landmarks[23],
+        knee: landmarks[25],
+        ankle: landmarks[27]
+      };
+
+      const right = {
+        hip: landmarks[24],
+        knee: landmarks[26],
+        ankle: landmarks[28]
+      };
+
+      const leftScore =
+        (left.hip.visibility ?? 0) +
+        (left.knee.visibility ?? 0) +
+        (left.ankle.visibility ?? 0);
+
+      const rightScore =
+        (right.hip.visibility ?? 0) +
+        (right.knee.visibility ?? 0) +
+        (right.ankle.visibility ?? 0);
+
+      return leftScore >= rightScore ? left : right;
+    }
+
+    function processSquat(landmarks) {
+      const side = pickBetterSide(landmarks);
+
+      const hip = getPixelPoint(side.hip);
+      const knee = getPixelPoint(side.knee);
+      const ankle = getPixelPoint(side.ankle);
+
+      drawLine(hip, knee);
+      drawLine(knee, ankle);
+      drawPoint(hip.x, hip.y);
+      drawPoint(knee.x, knee.y);
+      drawPoint(ankle.x, ankle.y);
+
+      const angle = calculateAngle(hip, knee, ankle);
+      if (angle == null) return;
+
+      // Basic squat logic:
+      // standing: larger knee angle
+      // bottom of squat: smaller knee angle
+      //
+      // You can adjust these numbers later.
+      const DOWN_THRESHOLD = 100;
+      const UP_THRESHOLD = 155;
+
+      if (angle < DOWN_THRESHOLD && stage === "up") {
+        stage = "down";
+      }
+
+      if (angle > UP_THRESHOLD && stage === "down") {
+        stage = "up";
+        repCount += 1;
+      }
+
+      updateUI(angle);
+    }
+
+    async function loop() {
+      if (!running) return;
+
+      if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+
+        const result = poseLandmarker.detectForVideo(video, performance.now());
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (result.landmarks && result.landmarks.length > 0) {
+          processSquat(result.landmarks[0]);
+          setStatus("Pose detected");
+        } else {
+          setStatus("No pose detected");
+          updateUI(null);
+        }
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    startBtn.addEventListener("click", async () => {
+      startBtn.disabled = true;
+      try {
+        setStatus("Loading MediaPipe...");
+        await setupPoseLandmarker();
+        await startCamera();
+      } catch (err) {
+        console.error(err);
+        setStatus("Setup error: " + err.message);
+        startBtn.disabled = false;
+      }
+    });
+
+    resetBtn.addEventListener("click", () => {
+      repCount = 0;
+      stage = "up";
+      updateUI(null);
+      setStatus("Count reset");
+    });
+
+    updateUI(null);
+  </script>
+</body>
+</html>
