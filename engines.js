@@ -74,16 +74,6 @@ function inFrame(point) {
   return point.x >= 0.02 && point.x <= 0.98 && point.y >= 0.02 && point.y <= 0.98
 }
 
-function interpolateY(a, b, x) {
-  const deltaX = b.x - a.x
-  if (Math.abs(deltaX) < 0.0001) {
-    return average([a.y, b.y])
-  }
-
-  const progress = (x - a.x) / deltaX
-  return a.y + (b.y - a.y) * progress
-}
-
 export class VoiceCoach {
   constructor() {
     this.lastSpokenAt = new Map()
@@ -707,7 +697,7 @@ const PUSHUP_READY_COPY = {
   "adjust-position": "Adjust your position so your full body is visible from the side.",
   "move-into-frame": "Adjust your position so your full body is visible from the side.",
   "turn-sideways": "Turn slightly sideways so your shoulder, hip, and ankle stay visible.",
-  "pushup-position": "Get into push-up position with your body straight and arms extended."
+  "pushup-position": "Get into push-up position."
 }
 
 export class PushUpSessionEngine {
@@ -788,11 +778,15 @@ export class PushUpSessionEngine {
       }
     }
 
+    if (!frame.canTrack) {
+      return this.pauseForTracking(frame, timestampMs, events)
+    }
+
     if (this.needsSetStartCheck && (!frame.orientation.accepted || !frame.startPostureOk)) {
       this.phase = "WAITING_FOR_START_POSITION"
       this.readyStableSince = null
       this.clearMovementState()
-      this.maybeSpeak(events, frame.orientation.reason, PUSHUP_READY_COPY[frame.orientation.reason], timestampMs, 2400)
+      this.maybeSpeak(events, frame.orientation.reason, PUSHUP_READY_COPY[frame.orientation.reason], timestampMs, 2000)
       this.captureTopMetrics(frame)
       return {
         snapshot: this.buildSnapshot(frame, PUSHUP_READY_COPY[frame.orientation.reason]),
@@ -852,8 +846,8 @@ export class PushUpSessionEngine {
     return {
       depthReached: false,
       bodyLineErrorFrames: 0,
-      hipsHighFrames: 0,
-      lockoutWarned: false,
+      depthWarned: false,
+      extensionWarned: false,
       minElbowAngle: 180,
       minBodyAngle: 180,
       maxElbowAngle: 0,
@@ -872,16 +866,34 @@ export class PushUpSessionEngine {
   }
 
   shouldStartDescending(frame) {
-    return frame.metrics.elbowAngle <= 138
+    return frame.metrics.elbowAngle < 140
   }
 
   isTopPosition(frame) {
-    return frame.metrics.elbowAngle >= 150
+    return frame.metrics.elbowAngle > 150
   }
 
   isMovingUp(frame) {
     if (this.lastMetrics === null) return false
     return frame.metrics.elbowAngle >= this.lastMetrics.elbowAngle + 2
+  }
+
+  isMovingDown(frame) {
+    if (this.lastMetrics === null) return false
+    return frame.metrics.elbowAngle <= this.lastMetrics.elbowAngle - 2
+  }
+
+  pauseForTracking(frame, timestampMs, events) {
+    this.phase = "WAITING_FOR_START_POSITION"
+    this.needsSetStartCheck = true
+    this.readyStableSince = null
+    this.clearMovementState()
+    this.maybeSpeak(events, frame.orientation.reason, PUSHUP_READY_COPY[frame.orientation.reason], timestampMs, 2000)
+
+    return {
+      snapshot: this.buildSnapshot(frame, PUSHUP_READY_COPY[frame.orientation.reason]),
+      events
+    }
   }
 
   trackRepFrame(frame, timestampMs, events) {
@@ -890,67 +902,68 @@ export class PushUpSessionEngine {
     this.currentRep.minBodyAngle = Math.min(this.currentRep.minBodyAngle, frame.metrics.bodyAngle)
     this.currentRep.maxElbowAngle = Math.max(this.currentRep.maxElbowAngle, frame.metrics.elbowAngle)
 
-    if (frame.metrics.hipsHigh) {
-      this.currentRep.hipsHighFrames += 1
-      this.currentRep.feedback.add("Lower your hips and align your body.")
-      this.maybeSpeak(events, "hips-high", "Lower your hips and align your body.", timestampMs, 2400)
-    } else if (frame.metrics.bodyAngle < 160 || frame.metrics.hipBelowLine) {
+    if (frame.metrics.bodyAngle < 160) {
       this.currentRep.bodyLineErrorFrames += 1
-      this.currentRep.feedback.add("Keep your body straight and core tight.")
-      this.maybeSpeak(events, "body-line", "Keep your body straight and core tight.", timestampMs, 2400)
+      this.currentRep.feedback.add("Keep your body straight")
+      this.maybeSpeak(events, "body-line", "Keep your body straight", timestampMs, 2000)
     }
 
     if (this.phase === "DESCENDING") {
       if (frame.metrics.elbowAngle < 100 || this.currentRep.depthReached) {
         this.phase = "BOTTOM"
-        this.bottomHoldSince = timestampMs
+        return
       }
+
+      if (this.isMovingUp(frame)) {
+        if (!this.currentRep.depthWarned) {
+          this.currentRep.depthWarned = true
+          this.currentRep.feedback.add("Go lower")
+          this.maybeSpeak(events, "go-lower", "Go lower", timestampMs, 2000)
+        }
+
+        this.clearMovementState()
+        this.captureTopMetrics(frame)
+        this.phase = "READY"
+      }
+
       return
     }
 
     if (this.phase === "BOTTOM") {
-      if (this.bottomHoldSince !== null && timestampMs - this.bottomHoldSince >= 80 && this.isMovingUp(frame)) {
+      if (this.isMovingUp(frame)) {
         this.phase = "ASCENDING"
       }
       return
     }
 
     if (this.phase === "ASCENDING") {
-      const losingExtension =
-        this.lastMetrics !== null && frame.metrics.elbowAngle < this.lastMetrics.elbowAngle - 2
-
-      if (!this.currentRep.lockoutWarned && losingExtension && frame.metrics.elbowAngle < 150) {
-        this.currentRep.lockoutWarned = true
-        this.currentRep.feedback.add("Fully extend your arms.")
-        this.maybeSpeak(events, "lockout", "Fully extend your arms.", timestampMs, 2000)
-      }
-
       if (this.isTopPosition(frame)) {
         this.completeRep(frame, timestampMs, events)
+        return
+      }
+
+      if (this.isMovingDown(frame) && !this.currentRep.extensionWarned) {
+        this.currentRep.extensionWarned = true
+        this.currentRep.feedback.add("Extend your arms")
+        this.maybeSpeak(events, "extend-arms", "Extend your arms", timestampMs, 2000)
+      }
+
+      if (frame.metrics.elbowAngle < 100) {
+        this.phase = "BOTTOM"
       }
     }
   }
 
   completeRep(frame, timestampMs, events) {
-    const depthValid = this.currentRep.minElbowAngle < 100
-    const postureValid = this.currentRep.bodyLineErrorFrames <= 5 && this.currentRep.hipsHighFrames <= 5
-    const depthScore = clamp(Math.round(100 - Math.max(0, this.currentRep.minElbowAngle - 88) * 2.2), 20, 100)
-    const postureScore = clamp(
-      Math.round(100 - this.currentRep.bodyLineErrorFrames * 4 - this.currentRep.hipsHighFrames * 6),
-      20,
-      100
-    )
-
-    if (!depthValid) {
-      this.currentRep.feedback.add("Go lower.")
-    }
+    const depthScore = clamp(Math.round(100 - Math.max(0, this.currentRep.minElbowAngle - 90) * 2), 20, 100)
+    const postureScore = clamp(Math.round(100 - this.currentRep.bodyLineErrorFrames * 6), 20, 100)
 
     const repResult = {
       setNumber: this.setNumber,
       repInSet: this.repInSet + 1,
-      depthValid,
-      postureValid,
-      valid: depthValid && postureValid,
+      depthValid: true,
+      postureValid: this.currentRep.bodyLineErrorFrames === 0,
+      valid: true,
       depthScore,
       postureScore,
       feedback: Array.from(this.currentRep.feedback)
@@ -959,12 +972,7 @@ export class PushUpSessionEngine {
     this.totalReps += 1
     this.repInSet += 1
     this.results.push(repResult)
-
-    if (repResult.valid) {
-      this.validReps += 1
-    } else {
-      this.invalidReps += 1
-    }
+    this.validReps += 1
 
     this.maybeSpeak(events, `rep-${this.repInSet}`, String(this.repInSet), timestampMs, 0, true)
 
@@ -1063,20 +1071,16 @@ export class PushUpSessionEngine {
       rightPoints.ankle.visibility
     ])
 
-    const leftDepthScore = -average([leftPoints.shoulder.z, leftPoints.elbow.z, leftPoints.hip.z, leftPoints.ankle.z])
-    const rightDepthScore = -average([rightPoints.shoulder.z, rightPoints.elbow.z, rightPoints.hip.z, rightPoints.ankle.z])
-    const leftScore = leftMeanVisibility + leftDepthScore * 0.08
-    const rightScore = rightMeanVisibility + rightDepthScore * 0.08
-    const candidateSide = leftScore >= rightScore ? "left" : "right"
+    const candidateSide = leftMeanVisibility >= rightMeanVisibility ? "left" : "right"
 
     if (this.trackedSide === null) {
       this.trackedSide = candidateSide
       this.pendingSide = null
       this.pendingSideFrames = 0
     } else if (candidateSide !== this.trackedSide) {
-      const candidateScore = candidateSide === "left" ? leftScore : rightScore
-      const currentScore = this.trackedSide === "left" ? leftScore : rightScore
-      if (candidateScore > currentScore + 0.08) {
+      const candidateScore = candidateSide === "left" ? leftMeanVisibility : rightMeanVisibility
+      const currentScore = this.trackedSide === "left" ? leftMeanVisibility : rightMeanVisibility
+      if (candidateScore > currentScore + 0.04) {
         if (this.pendingSide === candidateSide) {
           this.pendingSideFrames += 1
         } else {
@@ -1084,7 +1088,7 @@ export class PushUpSessionEngine {
           this.pendingSideFrames = 1
         }
 
-        if (this.pendingSideFrames >= 4) {
+        if (this.pendingSideFrames >= 3) {
           this.trackedSide = candidateSide
           this.pendingSide = null
           this.pendingSideFrames = 0
@@ -1110,11 +1114,14 @@ export class PushUpSessionEngine {
       Math.max(sidePoints.shoulder.y, sidePoints.hip.y, sidePoints.ankle.y) -
       Math.min(sidePoints.shoulder.y, sidePoints.hip.y, sidePoints.ankle.y)
     const horizontalRatio = bodyVerticalSpread / bodyLength
+    const shoulderHipDelta = Math.abs(sidePoints.shoulder.y - sidePoints.hip.y)
+    const hipAnkleDelta = Math.abs(sidePoints.hip.y - sidePoints.ankle.y)
+    const isHorizontal = shoulderHipDelta < 0.12 && hipAnkleDelta < 0.12
 
     const requiredVisible =
       trackedSideMean >= 0.62 &&
       [sidePoints.shoulder, sidePoints.elbow, sidePoints.hip, sidePoints.ankle].every(
-        (point) => point.visibility >= 0.45
+        (point) => point.visibility >= 0.5
       )
 
     const fullBodyVisible =
@@ -1138,20 +1145,21 @@ export class PushUpSessionEngine {
       fullBodyVisible &&
       sideViewRatio >= 0.01 &&
       sideViewRatio <= 0.2 &&
-      (trackedSideMean - farSideMean >= 0.05 || sideViewRatio <= 0.12)
+      (trackedSideMean - farSideMean >= 0.03 || sideViewRatio <= 0.12)
 
     const elbowAngle = this.smooth("elbowAngle", angleABC(sidePoints.shoulder, sidePoints.elbow, sidePoints.hip))
     const bodyAngle = this.smooth("bodyAngle", angleABC(sidePoints.shoulder, sidePoints.hip, sidePoints.ankle))
-    const bodyLineY = interpolateY(sidePoints.shoulder, sidePoints.ankle, sidePoints.hip.x)
-    const hipBelowLine = sidePoints.hip.y > bodyLineY + 0.03
-    const hipsHigh = sidePoints.hip.y < bodyLineY - 0.03 || sidePoints.hip.y < sidePoints.shoulder.y - 0.03
-    const startPostureOk = elbowAngle > 150 && bodyAngle > 160 && horizontalRatio <= 0.28 && !hipsHigh
+    const startPostureOk = elbowAngle > 150 && bodyAngle >= 160 && isHorizontal
+    const canTrack = requiredVisible && fullBodyVisible && sideViewRatio <= 0.2
 
-    if (orientationAccepted && !startPostureOk) {
+    if (!canTrack) {
+      reason = reason === "turn-sideways" ? reason : "move-into-frame"
+    } else if (orientationAccepted && !startPostureOk) {
       reason = "pushup-position"
     }
 
     return {
+      canTrack,
       trackedSide,
       sidePoints,
       orientation: {
@@ -1165,8 +1173,9 @@ export class PushUpSessionEngine {
       metrics: {
         elbowAngle,
         bodyAngle,
-        hipBelowLine,
-        hipsHigh,
+        isHorizontal,
+        shoulderHipDelta,
+        hipAnkleDelta,
         horizontalRatio,
         orientationAccepted,
         bodyLength,
@@ -1178,7 +1187,7 @@ export class PushUpSessionEngine {
   smooth(key, rawValue) {
     const bucket = this.smoothing[key]
     bucket.push(rawValue)
-    if (bucket.length > 4) bucket.shift()
+    if (bucket.length > 3) bucket.shift()
     return average(bucket)
   }
 
@@ -1232,7 +1241,7 @@ export class PushUpSessionEngine {
       return "Push the floor away."
     }
     if (this.phase === "ASCENDING") {
-      return "Press back to full lockout."
+      return "Extend your arms."
     }
     if (this.phase === "SESSION_COMPLETE") {
       return "Great job."
