@@ -254,6 +254,100 @@ function toCanvasPoint(point) {
   }
 }
 
+function drawSegment(context, start, end, color, lineWidth = 8, dash = []) {
+  context.save()
+  context.beginPath()
+  context.setLineDash(dash)
+  context.lineWidth = lineWidth
+  context.lineCap = "round"
+  context.lineJoin = "round"
+  context.strokeStyle = color
+  context.moveTo(start.x, start.y)
+  context.lineTo(end.x, end.y)
+  context.stroke()
+  context.restore()
+}
+
+function drawJointLabel(context, point, label, color, offsetX, offsetY) {
+  const pillX = point.x + offsetX
+  const pillY = point.y + offsetY
+  const paddingX = 10
+  const height = 24
+
+  context.save()
+  context.font = '700 11px "Manrope", sans-serif'
+  const textWidth = context.measureText(label).width
+  const width = textWidth + paddingX * 2
+  const radius = 12
+
+  context.beginPath()
+  context.moveTo(pillX + radius, pillY)
+  context.lineTo(pillX + width - radius, pillY)
+  context.quadraticCurveTo(pillX + width, pillY, pillX + width, pillY + radius)
+  context.lineTo(pillX + width, pillY + height - radius)
+  context.quadraticCurveTo(pillX + width, pillY + height, pillX + width - radius, pillY + height)
+  context.lineTo(pillX + radius, pillY + height)
+  context.quadraticCurveTo(pillX, pillY + height, pillX, pillY + height - radius)
+  context.lineTo(pillX, pillY + radius)
+  context.quadraticCurveTo(pillX, pillY, pillX + radius, pillY)
+  context.closePath()
+  context.fillStyle = "rgba(4, 9, 20, 0.86)"
+  context.fill()
+  context.strokeStyle = color
+  context.lineWidth = 1.5
+  context.stroke()
+
+  context.fillStyle = "#f4f7fb"
+  context.textBaseline = "middle"
+  context.fillText(label, pillX + paddingX, pillY + height / 2 + 0.5)
+  context.restore()
+}
+
+function drawJoint(context, point, color, label, offsetX, offsetY) {
+  context.beginPath()
+  context.arc(point.x, point.y, 8, 0, Math.PI * 2)
+  context.fillStyle = "#f4f7fb"
+  context.fill()
+
+  context.beginPath()
+  context.arc(point.x, point.y, 4.5, 0, Math.PI * 2)
+  context.fillStyle = color
+  context.fill()
+
+  drawJointLabel(context, point, label, color, offsetX, offsetY)
+}
+
+function drawPushUpPose(context, landmarks, side) {
+  const pointMap =
+    side === "left"
+      ? {
+          shoulder: toCanvasPoint(landmarks[11]),
+          elbow: toCanvasPoint(landmarks[13]),
+          hip: toCanvasPoint(landmarks[23]),
+          ankle: toCanvasPoint(landmarks[27])
+        }
+      : {
+          shoulder: toCanvasPoint(landmarks[12]),
+          elbow: toCanvasPoint(landmarks[14]),
+          hip: toCanvasPoint(landmarks[24]),
+          ankle: toCanvasPoint(landmarks[28])
+        }
+
+  const armColor = "#63d8ff"
+  const torsoColor = "#73f0b5"
+  const guideColor = "rgba(244, 247, 251, 0.18)"
+
+  drawSegment(context, pointMap.shoulder, pointMap.hip, torsoColor, 8)
+  drawSegment(context, pointMap.hip, pointMap.ankle, torsoColor, 8)
+  drawSegment(context, pointMap.shoulder, pointMap.elbow, armColor, 8)
+  drawSegment(context, pointMap.shoulder, pointMap.ankle, guideColor, 3, [8, 8])
+
+  drawJoint(context, pointMap.shoulder, torsoColor, "Shoulder", 12, -34)
+  drawJoint(context, pointMap.elbow, armColor, "Elbow", 12, 14)
+  drawJoint(context, pointMap.hip, torsoColor, "Hip", 12, -14)
+  drawJoint(context, pointMap.ankle, "#ffbd7a", "Ankle", 12, -34)
+}
+
 function drawPose(landmarks, trackedSide) {
   syncCanvasToVideo()
 
@@ -265,14 +359,16 @@ function drawPose(landmarks, trackedSide) {
 
   const exerciseId = state.selectedExerciseId
   const side = trackedSide || "left"
+
+  if (exerciseId === "pushup") {
+    drawPushUpPose(context, landmarks, side)
+    return
+  }
+
   const chain =
-    exerciseId === "pushup"
-      ? side === "left"
-        ? [11, 13, 23, 27]
-        : [12, 14, 24, 28]
-      : side === "left"
-        ? [11, 23, 25, 27, 29, 31]
-        : [12, 24, 26, 28, 30, 32]
+    side === "left"
+      ? [11, 23, 25, 27, 29, 31]
+      : [12, 24, 26, 28, 30, 32]
 
   const points = chain.map((index) => toCanvasPoint(landmarks[index]))
 

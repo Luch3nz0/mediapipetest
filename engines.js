@@ -22,6 +22,7 @@ function toPoint(landmarks, index) {
   return {
     x: source.x != null ? source.x : 0,
     y: source.y != null ? source.y : 0,
+    z: source.z != null ? source.z : 0,
     visibility: source.visibility != null ? source.visibility : source.presence != null ? source.presence : 1
   }
 }
@@ -734,6 +735,9 @@ export class PushUpSessionEngine {
     this.lastVoiceAt = new Map()
     this.lastAnyVoiceAt = -Infinity
     this.lastVoiceKey = null
+    this.trackedSide = null
+    this.pendingSide = null
+    this.pendingSideFrames = 0
   }
 
   getSnapshot() {
@@ -1019,7 +1023,7 @@ export class PushUpSessionEngine {
     }
   }
 
-  maybeSpeak(events, key, message, timestampMs, minIntervalMs = 1800, interrupt = false) {
+  maybeSpeak(events, key, message, timestampMs, minIntervalMs = 2000, interrupt = false) {
     const last = this.lastVoiceAt.has(key) ? this.lastVoiceAt.get(key) : -Infinity
     if (timestampMs - last < minIntervalMs) return
     if (!interrupt && timestampMs - this.lastAnyVoiceAt < 2000) return
@@ -1059,7 +1063,42 @@ export class PushUpSessionEngine {
       rightPoints.ankle.visibility
     ])
 
-    const trackedSide = leftMeanVisibility >= rightMeanVisibility ? "left" : "right"
+    const leftDepthScore = -average([leftPoints.shoulder.z, leftPoints.elbow.z, leftPoints.hip.z, leftPoints.ankle.z])
+    const rightDepthScore = -average([rightPoints.shoulder.z, rightPoints.elbow.z, rightPoints.hip.z, rightPoints.ankle.z])
+    const leftScore = leftMeanVisibility + leftDepthScore * 0.08
+    const rightScore = rightMeanVisibility + rightDepthScore * 0.08
+    const candidateSide = leftScore >= rightScore ? "left" : "right"
+
+    if (this.trackedSide === null) {
+      this.trackedSide = candidateSide
+      this.pendingSide = null
+      this.pendingSideFrames = 0
+    } else if (candidateSide !== this.trackedSide) {
+      const candidateScore = candidateSide === "left" ? leftScore : rightScore
+      const currentScore = this.trackedSide === "left" ? leftScore : rightScore
+      if (candidateScore > currentScore + 0.08) {
+        if (this.pendingSide === candidateSide) {
+          this.pendingSideFrames += 1
+        } else {
+          this.pendingSide = candidateSide
+          this.pendingSideFrames = 1
+        }
+
+        if (this.pendingSideFrames >= 4) {
+          this.trackedSide = candidateSide
+          this.pendingSide = null
+          this.pendingSideFrames = 0
+        }
+      } else {
+        this.pendingSide = null
+        this.pendingSideFrames = 0
+      }
+    } else {
+      this.pendingSide = null
+      this.pendingSideFrames = 0
+    }
+
+    const trackedSide = this.trackedSide
     const sidePoints = trackedSide === "left" ? leftPoints : rightPoints
     const trackedSideMean = trackedSide === "left" ? leftMeanVisibility : rightMeanVisibility
     const farSideMean = trackedSide === "left" ? rightMeanVisibility : leftMeanVisibility
