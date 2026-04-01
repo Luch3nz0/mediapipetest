@@ -43,17 +43,17 @@ const EXERCISES = {
   pushup: {
     id: "pushup",
     title: "Push-up rule test",
-    description: "Implements the push-up rules from your spec: elbow depth, straight body line, lockout, and camera gating.",
-    tag: "Elbow and plank line",
+    description: "Uses the updated MediaPipe-optimized push-up rules: shoulder-elbow-hip rep proxy, body-line checks, and no wrist dependency.",
+    tag: "Proxy elbow and body line",
     protocol: { sets: 3, repsPerSet: 5, restSeconds: 15 },
     viewLabel: "Low side or 3/4 floor view",
-    viewCopy: "Place the phone low enough to catch wrists, shoulders, hips, and ankles in one line before starting.",
-    ruleLabel: "Depth, body line, lockout",
-    ruleCopy: "Voice prioritizes straight-line setup, then depth, then hip height while counting reps back into sets.",
+    viewCopy: "Place the phone low enough to keep shoulder, elbow, hip, and ankle visible while your body stays parallel to the floor.",
+    ruleLabel: "Elbow proxy and body angle",
+    ruleCopy: "Rep detection uses the shoulder-elbow-hip proxy angle plus shoulder-hip-ankle alignment, with body-line cues prioritized ahead of depth and lockout.",
     highlights: [
-      "Requires arms extended and a straight line before counting starts.",
-      "Counts reps from elbow angle while checking body alignment through the whole rep.",
-      "Uses your push-up reference images directly in the test picker."
+      "Uses only shoulder, elbow, hip, and ankle landmarks from the clearest side.",
+      "Requires a straight body, extended arms, and a floor-parallel setup before counting starts.",
+      "Counts completed reps while still voicing alignment corrections during the movement."
     ],
     renderVisual() {
       return `
@@ -268,8 +268,8 @@ function drawPose(landmarks, trackedSide) {
   const chain =
     exerciseId === "pushup"
       ? side === "left"
-        ? [11, 13, 15, 23, 27]
-        : [12, 14, 16, 24, 28]
+        ? [11, 13, 23, 27]
+        : [12, 14, 24, 28]
       : side === "left"
         ? [11, 23, 25, 27, 29, 31]
         : [12, 24, 26, 28, 30, 32]

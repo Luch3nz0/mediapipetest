@@ -73,6 +73,16 @@ function inFrame(point) {
   return point.x >= 0.02 && point.x <= 0.98 && point.y >= 0.02 && point.y <= 0.98
 }
 
+function interpolateY(a, b, x) {
+  const deltaX = b.x - a.x
+  if (Math.abs(deltaX) < 0.0001) {
+    return average([a.y, b.y])
+  }
+
+  const progress = (x - a.x) / deltaX
+  return a.y + (b.y - a.y) * progress
+}
+
 export class VoiceCoach {
   constructor() {
     this.lastSpokenAt = new Map()
@@ -471,7 +481,7 @@ export class SquatSessionEngine {
     }
   }
 
-  maybeSpeak(events, key, message, timestampMs, minIntervalMs = 1800, interrupt = false) {
+  maybeSpeak(events, key, message, timestampMs, minIntervalMs = 2000, interrupt = false) {
     const last = this.lastVoiceAt.has(key) ? this.lastVoiceAt.get(key) : -Infinity
     if (timestampMs - last < minIntervalMs) return
     if (!interrupt && timestampMs - this.lastAnyVoiceAt < 3200) return
@@ -686,8 +696,6 @@ const PUSHUP_LANDMARK_INDEX = {
   rightShoulder: 12,
   leftElbow: 13,
   rightElbow: 14,
-  leftWrist: 15,
-  rightWrist: 16,
   leftHip: 23,
   rightHip: 24,
   leftAnkle: 27,
@@ -696,10 +704,9 @@ const PUSHUP_LANDMARK_INDEX = {
 
 const PUSHUP_READY_COPY = {
   "adjust-position": "Adjust your position so your full body is visible from the side.",
-  "straight-line": "Get into position with your body in a straight line.",
-  "move-into-frame": "Move until your full body is visible.",
-  "turn-sideways": "Turn sideways to the camera.",
-  "arms-extended": "Start with your arms fully extended."
+  "move-into-frame": "Adjust your position so your full body is visible from the side.",
+  "turn-sideways": "Turn slightly sideways so your shoulder, hip, and ankle stay visible.",
+  "pushup-position": "Get into push-up position with your body straight and arms extended."
 }
 
 export class PushUpSessionEngine {
@@ -726,6 +733,7 @@ export class PushUpSessionEngine {
     this.restGetReadyAnnounced = false
     this.lastVoiceAt = new Map()
     this.lastAnyVoiceAt = -Infinity
+    this.lastVoiceKey = null
   }
 
   getSnapshot() {
@@ -841,6 +849,7 @@ export class PushUpSessionEngine {
       depthReached: false,
       bodyLineErrorFrames: 0,
       hipsHighFrames: 0,
+      lockoutWarned: false,
       minElbowAngle: 180,
       minBodyAngle: 180,
       maxElbowAngle: 0,
@@ -859,11 +868,11 @@ export class PushUpSessionEngine {
   }
 
   shouldStartDescending(frame) {
-    return frame.metrics.elbowAngle <= 140
+    return frame.metrics.elbowAngle <= 138
   }
 
   isTopPosition(frame) {
-    return frame.metrics.elbowAngle >= 152 && frame.metrics.bodyAngle >= 150
+    return frame.metrics.elbowAngle >= 150
   }
 
   isMovingUp(frame) {
@@ -872,23 +881,23 @@ export class PushUpSessionEngine {
   }
 
   trackRepFrame(frame, timestampMs, events) {
-    this.currentRep.depthReached = this.currentRep.depthReached || frame.metrics.elbowAngle <= 90
+    this.currentRep.depthReached = this.currentRep.depthReached || frame.metrics.elbowAngle < 100
     this.currentRep.minElbowAngle = Math.min(this.currentRep.minElbowAngle, frame.metrics.elbowAngle)
     this.currentRep.minBodyAngle = Math.min(this.currentRep.minBodyAngle, frame.metrics.bodyAngle)
     this.currentRep.maxElbowAngle = Math.max(this.currentRep.maxElbowAngle, frame.metrics.elbowAngle)
 
     if (frame.metrics.hipsHigh) {
       this.currentRep.hipsHighFrames += 1
-      this.currentRep.feedback.add("Lower your hips and keep a straight line.")
-      this.maybeSpeak(events, "hips-high", "Lower your hips and keep a straight line.", timestampMs, 3200)
-    } else if (frame.metrics.bodyAngle < 160) {
+      this.currentRep.feedback.add("Lower your hips and align your body.")
+      this.maybeSpeak(events, "hips-high", "Lower your hips and align your body.", timestampMs, 2400)
+    } else if (frame.metrics.bodyAngle < 160 || frame.metrics.hipBelowLine) {
       this.currentRep.bodyLineErrorFrames += 1
-      this.currentRep.feedback.add("Keep your core tight and your body straight.")
-      this.maybeSpeak(events, "body-line", "Keep your core tight and your body straight.", timestampMs, 3200)
+      this.currentRep.feedback.add("Keep your body straight and core tight.")
+      this.maybeSpeak(events, "body-line", "Keep your body straight and core tight.", timestampMs, 2400)
     }
 
     if (this.phase === "DESCENDING") {
-      if (frame.metrics.elbowAngle <= 96 || this.currentRep.depthReached) {
+      if (frame.metrics.elbowAngle < 100 || this.currentRep.depthReached) {
         this.phase = "BOTTOM"
         this.bottomHoldSince = timestampMs
       }
@@ -902,23 +911,34 @@ export class PushUpSessionEngine {
       return
     }
 
-    if (this.phase === "ASCENDING" && this.isTopPosition(frame)) {
-      this.completeRep(frame, timestampMs, events)
+    if (this.phase === "ASCENDING") {
+      const losingExtension =
+        this.lastMetrics !== null && frame.metrics.elbowAngle < this.lastMetrics.elbowAngle - 2
+
+      if (!this.currentRep.lockoutWarned && losingExtension && frame.metrics.elbowAngle < 150) {
+        this.currentRep.lockoutWarned = true
+        this.currentRep.feedback.add("Fully extend your arms.")
+        this.maybeSpeak(events, "lockout", "Fully extend your arms.", timestampMs, 2000)
+      }
+
+      if (this.isTopPosition(frame)) {
+        this.completeRep(frame, timestampMs, events)
+      }
     }
   }
 
   completeRep(frame, timestampMs, events) {
-    const depthValid = this.currentRep.minElbowAngle <= 100
+    const depthValid = this.currentRep.minElbowAngle < 100
     const postureValid = this.currentRep.bodyLineErrorFrames <= 5 && this.currentRep.hipsHighFrames <= 5
-    const depthScore = clamp(Math.round(100 - Math.max(0, this.currentRep.minElbowAngle - 90) * 2.4), 20, 100)
+    const depthScore = clamp(Math.round(100 - Math.max(0, this.currentRep.minElbowAngle - 88) * 2.2), 20, 100)
     const postureScore = clamp(
-      Math.round(100 - this.currentRep.bodyLineErrorFrames * 5 - this.currentRep.hipsHighFrames * 7),
+      Math.round(100 - this.currentRep.bodyLineErrorFrames * 4 - this.currentRep.hipsHighFrames * 6),
       20,
       100
     )
 
     if (!depthValid) {
-      this.currentRep.feedback.add("Go lower, bring your chest closer to the ground.")
+      this.currentRep.feedback.add("Go lower.")
     }
 
     const repResult = {
@@ -1002,11 +1022,13 @@ export class PushUpSessionEngine {
   maybeSpeak(events, key, message, timestampMs, minIntervalMs = 1800, interrupt = false) {
     const last = this.lastVoiceAt.has(key) ? this.lastVoiceAt.get(key) : -Infinity
     if (timestampMs - last < minIntervalMs) return
-    if (!interrupt && timestampMs - this.lastAnyVoiceAt < 2600) return
+    if (!interrupt && timestampMs - this.lastAnyVoiceAt < 2000) return
+    if (!interrupt && this.lastVoiceKey === key) return
     if (events.some((event) => event.type === "voice")) return
 
     this.lastVoiceAt.set(key, timestampMs)
     this.lastAnyVoiceAt = timestampMs
+    this.lastVoiceKey = key
     events.push({ type: "voice", key, message, interrupt })
   }
 
@@ -1014,14 +1036,12 @@ export class PushUpSessionEngine {
     const leftPoints = {
       shoulder: toPoint(landmarks, PUSHUP_LANDMARK_INDEX.leftShoulder),
       elbow: toPoint(landmarks, PUSHUP_LANDMARK_INDEX.leftElbow),
-      wrist: toPoint(landmarks, PUSHUP_LANDMARK_INDEX.leftWrist),
       hip: toPoint(landmarks, PUSHUP_LANDMARK_INDEX.leftHip),
       ankle: toPoint(landmarks, PUSHUP_LANDMARK_INDEX.leftAnkle)
     }
     const rightPoints = {
       shoulder: toPoint(landmarks, PUSHUP_LANDMARK_INDEX.rightShoulder),
       elbow: toPoint(landmarks, PUSHUP_LANDMARK_INDEX.rightElbow),
-      wrist: toPoint(landmarks, PUSHUP_LANDMARK_INDEX.rightWrist),
       hip: toPoint(landmarks, PUSHUP_LANDMARK_INDEX.rightHip),
       ankle: toPoint(landmarks, PUSHUP_LANDMARK_INDEX.rightAnkle)
     }
@@ -1029,14 +1049,12 @@ export class PushUpSessionEngine {
     const leftMeanVisibility = average([
       leftPoints.shoulder.visibility,
       leftPoints.elbow.visibility,
-      leftPoints.wrist.visibility,
       leftPoints.hip.visibility,
       leftPoints.ankle.visibility
     ])
     const rightMeanVisibility = average([
       rightPoints.shoulder.visibility,
       rightPoints.elbow.visibility,
-      rightPoints.wrist.visibility,
       rightPoints.hip.visibility,
       rightPoints.ankle.visibility
     ])
@@ -1049,17 +1067,20 @@ export class PushUpSessionEngine {
     const shoulderGapRatio = Math.abs(leftPoints.shoulder.x - rightPoints.shoulder.x) / bodyLength
     const hipGapRatio = Math.abs(leftPoints.hip.x - rightPoints.hip.x) / bodyLength
     const sideViewRatio = Math.max(shoulderGapRatio, hipGapRatio)
+    const bodyVerticalSpread =
+      Math.max(sidePoints.shoulder.y, sidePoints.hip.y, sidePoints.ankle.y) -
+      Math.min(sidePoints.shoulder.y, sidePoints.hip.y, sidePoints.ankle.y)
+    const horizontalRatio = bodyVerticalSpread / bodyLength
 
     const requiredVisible =
-      trackedSideMean >= 0.58 &&
-      [sidePoints.shoulder, sidePoints.elbow, sidePoints.wrist, sidePoints.hip, sidePoints.ankle].every(
+      trackedSideMean >= 0.62 &&
+      [sidePoints.shoulder, sidePoints.elbow, sidePoints.hip, sidePoints.ankle].every(
         (point) => point.visibility >= 0.45
       )
 
     const fullBodyVisible =
       inFrame(sidePoints.shoulder) &&
       inFrame(sidePoints.elbow) &&
-      inFrame(sidePoints.wrist) &&
       inFrame(sidePoints.hip) &&
       inFrame(sidePoints.ankle)
 
@@ -1080,17 +1101,15 @@ export class PushUpSessionEngine {
       sideViewRatio <= 0.2 &&
       (trackedSideMean - farSideMean >= 0.05 || sideViewRatio <= 0.12)
 
-    const elbowAngle = this.smooth("elbowAngle", angleABC(sidePoints.shoulder, sidePoints.elbow, sidePoints.wrist))
+    const elbowAngle = this.smooth("elbowAngle", angleABC(sidePoints.shoulder, sidePoints.elbow, sidePoints.hip))
     const bodyAngle = this.smooth("bodyAngle", angleABC(sidePoints.shoulder, sidePoints.hip, sidePoints.ankle))
-    const hipsHigh = sidePoints.hip.y < sidePoints.shoulder.y - 0.03
-    const startPostureOk = elbowAngle >= 160 && bodyAngle >= 160 && !hipsHigh
+    const bodyLineY = interpolateY(sidePoints.shoulder, sidePoints.ankle, sidePoints.hip.x)
+    const hipBelowLine = sidePoints.hip.y > bodyLineY + 0.03
+    const hipsHigh = sidePoints.hip.y < bodyLineY - 0.03 || sidePoints.hip.y < sidePoints.shoulder.y - 0.03
+    const startPostureOk = elbowAngle > 150 && bodyAngle > 160 && horizontalRatio <= 0.28 && !hipsHigh
 
     if (orientationAccepted && !startPostureOk) {
-      if (hipsHigh || bodyAngle < 160) {
-        reason = "straight-line"
-      } else {
-        reason = "arms-extended"
-      }
+      reason = "pushup-position"
     }
 
     return {
@@ -1107,7 +1126,9 @@ export class PushUpSessionEngine {
       metrics: {
         elbowAngle,
         bodyAngle,
+        hipBelowLine,
         hipsHigh,
+        horizontalRatio,
         orientationAccepted,
         bodyLength,
         sideViewRatio
@@ -1169,10 +1190,10 @@ export class PushUpSessionEngine {
       return "Lower with control."
     }
     if (this.phase === "BOTTOM") {
-      return "Drive away from the floor."
+      return "Push the floor away."
     }
     if (this.phase === "ASCENDING") {
-      return "Finish with full lockout."
+      return "Press back to full lockout."
     }
     if (this.phase === "SESSION_COMPLETE") {
       return "Great job."
