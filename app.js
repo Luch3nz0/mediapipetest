@@ -1,12 +1,19 @@
 import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest"
 import { PushUpSessionEngine, SquatSessionEngine, VoiceCoach } from "./engines.js"
 
+const POSE_MODEL_ASSET_PATHS = {
+  lite: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
+  heavy:
+    "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task"
+}
+
 const EXERCISES = {
   squat: {
     id: "squat",
     title: "Squat rule test",
     description: "A stripped-down copy of the live training session focused on side-view squat validation.",
     tag: "Depth and posture",
+    poseModelVariant: "lite",
     protocol: { sets: 3, repsPerSet: 5, restSeconds: 15 },
     viewLabel: "Side or slight 3/4 view",
     viewCopy: "Stand far enough back so your head, hips, knees, heels, and toes stay fully visible.",
@@ -43,8 +50,10 @@ const EXERCISES = {
   pushup: {
     id: "pushup",
     title: "Push-up rule test",
-    description: "Uses the updated MediaPipe-optimized push-up rules: shoulder-elbow-hip rep proxy, body-line checks, and no wrist dependency.",
+    description:
+      "Uses the updated MediaPipe-optimized push-up rules with the heavy Pose Landmarker model for better floor-exercise accuracy.",
     tag: "Proxy elbow and body line",
+    poseModelVariant: "heavy",
     protocol: { sets: 3, repsPerSet: 5, restSeconds: 15 },
     viewLabel: "Low side or 3/4 floor view",
     viewCopy: "Place the phone low enough to keep shoulder, elbow, hip, and ankle visible while your body stays parallel to the floor.",
@@ -75,6 +84,11 @@ const state = {
   screen: "picker",
   selectedExerciseId: null,
   poseLandmarker: null,
+  poseLandmarkerCache: {
+    lite: null,
+    heavy: null
+  },
+  vision: null,
   stream: null,
   running: false,
   lastVideoTime: -1,
@@ -397,22 +411,29 @@ function drawPose(landmarks, trackedSide) {
   }
 }
 
-async function ensurePoseLandmarker() {
-  if (state.poseLandmarker) return state.poseLandmarker
+async function ensurePoseLandmarker(modelVariant) {
+  const assetPath = POSE_MODEL_ASSET_PATHS[modelVariant]
+  if (!assetPath) {
+    throw new Error(`Unsupported pose model variant: ${modelVariant}`)
+  }
 
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-  )
+  if (!state.vision) {
+    state.vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+    )
+  }
 
-  state.poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-    baseOptions: {
-      modelAssetPath:
-        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
-    },
-    runningMode: "VIDEO",
-    numPoses: 1
-  })
+  if (!state.poseLandmarkerCache[modelVariant]) {
+    state.poseLandmarkerCache[modelVariant] = await PoseLandmarker.createFromOptions(state.vision, {
+      baseOptions: {
+        modelAssetPath: assetPath
+      },
+      runningMode: "VIDEO",
+      numPoses: 1
+    })
+  }
 
+  state.poseLandmarker = state.poseLandmarkerCache[modelVariant]
   return state.poseLandmarker
 }
 
@@ -509,7 +530,7 @@ async function startCamera() {
   els.cameraError.textContent = ""
 
   try {
-    await ensurePoseLandmarker()
+    await ensurePoseLandmarker(exercise.poseModelVariant)
     await stopLiveResources()
 
     const stream = await navigator.mediaDevices.getUserMedia({
