@@ -1,0 +1,580 @@
+:root {
+  color-scheme: dark;
+  --bg: #050c18;
+  --bg-soft: rgba(8, 19, 38, 0.84);
+  --panel: rgba(8, 18, 34, 0.76);
+  --panel-strong: rgba(10, 21, 41, 0.94);
+  --line: rgba(255, 255, 255, 0.08);
+  --text: #f4f7fb;
+  --muted: rgba(232, 238, 249, 0.74);
+  --accent: #63d8ff;
+  --accent-soft: rgba(99, 216, 255, 0.18);
+  --accent-strong: #7a8cff;
+  --good: #4fe29a;
+  --warn: #ffd369;
+  --bad: #ff8a8a;
+  --shadow: 0 26px 60px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top, rgba(99, 216, 255, 0.08), transparent 34%),
+    radial-gradient(circle at 20% 80%, rgba(122, 140, 255, 0.09), transparent 28%),
+    linear-gradient(180deg, #040814 0%, #050d19 45%, #050914 100%);
+  color: var(--text);
+  padding: 20px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  cursor: pointer;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.bg-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.glow {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(26px);
+  opacity: 0.5;
+}
+
+.glow-a {
+  width: 320px;
+  height: 320px;
+  top: -40px;
+  right: 8%;
+  background: rgba(99, 216, 255, 0.16);
+}
+
+.glow-b {
+  width: 260px;
+  height: 260px;
+  left: -60px;
+  bottom: 8%;
+  background: rgba(122, 140, 255, 0.16);
+}
+
+.grid-fade {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.4), transparent 78%);
+}
+
+.app-shell {
+  position: relative;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.screen {
+  display: grid;
+  gap: 18px;
+}
+
+.hero-card,
+.exercise-card,
+.camera-card,
+.meta-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.hero-card {
+  padding: 28px;
+  gap: 16px;
+  display: grid;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(244, 247, 251, 0.62);
+}
+
+h1,
+h2,
+h3,
+strong {
+  font-family: "Sora", "Segoe UI", sans-serif;
+  letter-spacing: -0.04em;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  line-height: 1.02;
+  max-width: 780px;
+}
+
+.hero-copy {
+  max-width: 720px;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 1rem;
+}
+
+.hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pill,
+.status-pill,
+.rest-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.exercise-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.exercise-card {
+  padding: 18px;
+  display: grid;
+  gap: 18px;
+}
+
+.exercise-visual {
+  border-radius: 22px;
+  overflow: hidden;
+  min-height: 220px;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(99, 216, 255, 0.22), transparent 34%),
+    linear-gradient(180deg, rgba(13, 28, 54, 0.88), rgba(7, 15, 29, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+}
+
+.exercise-visual.is-illustration {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.exercise-illustration {
+  width: min(100%, 340px);
+  aspect-ratio: 16 / 10;
+  border-radius: 24px;
+  background:
+    linear-gradient(130deg, rgba(99, 216, 255, 0.14), rgba(122, 140, 255, 0.06)),
+    rgba(5, 11, 24, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  place-items: center;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.exercise-illustration svg {
+  width: 88%;
+  height: auto;
+}
+
+.reference-strip {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 8px;
+  height: 100%;
+}
+
+.reference-strip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.exercise-copy {
+  display: grid;
+  gap: 14px;
+}
+
+.exercise-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.exercise-head h2 {
+  font-size: 1.45rem;
+}
+
+.exercise-tag {
+  background: rgba(99, 216, 255, 0.1);
+  color: #ccefff;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.exercise-description,
+.exercise-rule-list,
+.meta-card p,
+.camera-error {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.exercise-rule-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.exercise-rule-list li {
+  padding-left: 16px;
+  position: relative;
+}
+
+.exercise-rule-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.primary-button,
+.secondary-button,
+.ghost-button {
+  min-height: 50px;
+  padding: 0 18px;
+  border-radius: 16px;
+  font-weight: 700;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.primary-button {
+  background: linear-gradient(135deg, #63d8ff, #7a8cff);
+  color: #04111f;
+}
+
+.secondary-button {
+  background: rgba(99, 216, 255, 0.12);
+  border: 1px solid rgba(99, 216, 255, 0.22);
+  color: #dff5ff;
+}
+
+.ghost-button {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.primary-button:hover,
+.secondary-button:hover,
+.ghost-button:hover {
+  transform: translateY(-1px);
+}
+
+.live-screen {
+  gap: 16px;
+}
+
+.live-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.live-heading {
+  display: grid;
+  gap: 6px;
+}
+
+.live-heading h2 {
+  font-size: 1.4rem;
+}
+
+.camera-card {
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.camera-stage {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  aspect-ratio: 3 / 4;
+  border-radius: 28px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(99, 216, 255, 0.18), transparent 40%),
+    linear-gradient(180deg, rgba(5, 12, 24, 0.94), rgba(3, 7, 14, 0.98));
+}
+
+.camera-video,
+.camera-canvas,
+.camera-gradient,
+.camera-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.camera-video,
+.camera-canvas {
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.camera-gradient {
+  background:
+    linear-gradient(180deg, rgba(5, 12, 24, 0.24) 0%, rgba(5, 12, 24, 0.14) 38%, rgba(5, 12, 24, 0.88) 100%);
+}
+
+.camera-overlay {
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 5, 11, 0.48);
+}
+
+.camera-overlay-card {
+  width: min(100%, 360px);
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(6, 14, 27, 0.86);
+  backdrop-filter: blur(18px);
+  display: grid;
+  gap: 12px;
+  text-align: left;
+}
+
+.camera-overlay-card h3 {
+  font-size: 1.55rem;
+}
+
+.camera-overlay-card p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.camera-hud {
+  position: absolute;
+  inset: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.camera-stats {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.camera-stat {
+  min-width: 118px;
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(4, 9, 20, 0.54);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.camera-stat span,
+.coach-label,
+.meta-card span {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(244, 247, 251, 0.6);
+}
+
+.camera-stat strong {
+  font-size: 1.1rem;
+}
+
+.camera-middle {
+  display: flex;
+  justify-content: center;
+}
+
+.status-pill {
+  background: rgba(255, 183, 77, 0.16);
+  border-color: rgba(255, 183, 77, 0.24);
+  color: #ffe0a6;
+}
+
+.status-pill.is-ready {
+  background: rgba(79, 226, 154, 0.16);
+  border-color: rgba(79, 226, 154, 0.24);
+  color: #d9ffe9;
+}
+
+.status-pill.is-complete {
+  background: rgba(122, 140, 255, 0.18);
+  border-color: rgba(122, 140, 255, 0.28);
+  color: #e0e5ff;
+}
+
+.camera-footer {
+  display: grid;
+  gap: 10px;
+}
+
+.rest-pill {
+  justify-self: flex-start;
+  background: rgba(99, 216, 255, 0.14);
+  border-color: rgba(99, 216, 255, 0.22);
+  color: #dff5ff;
+}
+
+.coach-bubble {
+  max-width: 420px;
+  justify-self: center;
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: rgba(4, 9, 20, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+  text-align: center;
+}
+
+.coach-bubble strong {
+  font-size: 1rem;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.camera-error {
+  text-align: center;
+  min-height: 24px;
+}
+
+.live-meta-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.meta-card {
+  padding: 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.meta-card strong {
+  font-size: 1.1rem;
+}
+
+@media (min-width: 760px) {
+  .exercise-grid,
+  .live-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 759px) {
+  body {
+    padding: 16px;
+  }
+
+  .hero-card,
+  .exercise-card,
+  .camera-card,
+  .meta-card {
+    border-radius: 24px;
+  }
+
+  .live-topbar {
+    align-items: stretch;
+  }
+
+  .live-topbar > * {
+    width: 100%;
+  }
+
+  .camera-stage {
+    aspect-ratio: 9 / 12;
+  }
+
+  .camera-stat {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+}
