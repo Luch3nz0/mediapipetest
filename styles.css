@@ -391,6 +391,10 @@ h1 {
 .camera-video,
 .camera-canvas {
   object-fit: cover;
+}
+
+.camera-video.is-mirrored,
+.camera-canvas.is-mirrored {
   transform: scaleX(-1);
 }
 
@@ -540,6 +544,34 @@ h1 {
 
 .meta-card strong {
   font-size: 1.1rem;
+}
+
+.camera-source-control {
+  display: grid;
+  gap: 10px;
+}
+
+.camera-source-label {
+  font-size: 0.94rem;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.camera-select {
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(99, 216, 255, 0.18);
+  background: rgba(4, 9, 20, 0.72);
+  color: var(--text);
+  outline: none;
+  appearance: none;
+}
+
+.camera-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 @media (min-width: 760px) {

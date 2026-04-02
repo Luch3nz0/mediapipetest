@@ -7,6 +7,17 @@ const POSE_MODEL_ASSET_PATHS = {
     "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task"
 }
 
+const CAMERA_SOURCE_OPTIONS = {
+  user: {
+    label: "Front camera",
+    mirrored: true
+  },
+  environment: {
+    label: "Back camera",
+    mirrored: false
+  }
+}
+
 const EXERCISES = {
   squat: {
     id: "squat",
@@ -92,6 +103,8 @@ const state = {
   },
   vision: null,
   stream: null,
+  cameraFacingMode: "user",
+  cameraStarting: false,
   running: false,
   lastVideoTime: -1,
   rafId: 0,
@@ -114,6 +127,7 @@ const els = {
   changeExerciseBtn: document.getElementById("change-exercise-btn"),
   resetSessionBtn: document.getElementById("reset-session-btn"),
   startCameraBtn: document.getElementById("start-camera-btn"),
+  cameraSourceSelect: document.getElementById("camera-source-select"),
   cameraPrompt: document.getElementById("camera-prompt"),
   cameraVideo: document.getElementById("camera-video"),
   cameraCanvas: document.getElementById("camera-canvas"),
@@ -134,6 +148,18 @@ function setScreen(nextScreen) {
 
 function getSelectedExercise() {
   return state.selectedExerciseId ? EXERCISES[state.selectedExerciseId] : null
+}
+
+function syncCameraPresentation() {
+  const cameraOption = CAMERA_SOURCE_OPTIONS[state.cameraFacingMode] || CAMERA_SOURCE_OPTIONS.user
+  const shouldMirror = cameraOption.mirrored
+
+  els.cameraVideo.classList.toggle("is-mirrored", shouldMirror)
+  els.cameraCanvas.classList.toggle("is-mirrored", shouldMirror)
+
+  if (els.cameraSourceSelect && els.cameraSourceSelect.value !== state.cameraFacingMode) {
+    els.cameraSourceSelect.value = state.cameraFacingMode
+  }
 }
 
 function renderExerciseCards() {
@@ -239,6 +265,69 @@ function renderSnapshot(snapshot) {
     els.restPill.textContent = `Rest ${Math.ceil(snapshot.restRemainingMs / 1000)}s`
   } else {
     els.restPill.hidden = true
+  }
+}
+
+function buildCameraConstraints(facingMode, exact = false) {
+  const facingModeConstraint = exact ? { exact: facingMode } : facingMode
+  return {
+    audio: false,
+    video: {
+      facingMode: facingModeConstraint,
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    }
+  }
+}
+
+async function requestCameraStream(facingMode) {
+  try {
+    return await navigator.mediaDevices.getUserMedia(buildCameraConstraints(facingMode, true))
+  } catch (error) {
+    const constraintError =
+      error instanceof DOMException &&
+      (error.name === "OverconstrainedError" || error.name === "NotFoundError" || error.name === "ConstraintNotSatisfiedError")
+
+    if (!constraintError) {
+      throw error
+    }
+  }
+
+  try {
+    return await navigator.mediaDevices.getUserMedia(buildCameraConstraints(facingMode, false))
+  } catch (error) {
+    const constraintError =
+      error instanceof DOMException &&
+      (error.name === "OverconstrainedError" || error.name === "NotFoundError" || error.name === "ConstraintNotSatisfiedError")
+
+    if (!constraintError) {
+      throw error
+    }
+  }
+
+  return navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    }
+  })
+}
+
+async function handleCameraSourceChange() {
+  if (!els.cameraSourceSelect) return
+
+  const nextFacingMode = els.cameraSourceSelect.value
+  if (!CAMERA_SOURCE_OPTIONS[nextFacingMode] || nextFacingMode === state.cameraFacingMode) {
+    syncCameraPresentation()
+    return
+  }
+
+  state.cameraFacingMode = nextFacingMode
+  syncCameraPresentation()
+
+  if (state.stream && !state.cameraStarting) {
+    await startCamera()
   }
 }
 
@@ -522,24 +611,22 @@ function startLoop() {
 
 async function startCamera() {
   const exercise = getSelectedExercise()
-  if (!exercise) return
+  if (!exercise || state.cameraStarting) return
 
+  state.cameraStarting = true
   els.startCameraBtn.disabled = true
+  if (els.cameraSourceSelect) {
+    els.cameraSourceSelect.disabled = true
+  }
   els.cameraError.hidden = true
   els.cameraError.textContent = ""
 
   try {
     await ensurePoseLandmarker(exercise.poseModelVariant)
     await stopLiveResources()
+    syncCameraPresentation()
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        facingMode: "user",
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      }
-    })
+    const stream = await requestCameraStream(state.cameraFacingMode)
 
     state.stream = stream
     state.running = true
@@ -553,14 +640,20 @@ async function startCamera() {
     startLoop()
     els.cameraPrompt.hidden = true
   } catch (error) {
+    const cameraOption = CAMERA_SOURCE_OPTIONS[state.cameraFacingMode] || CAMERA_SOURCE_OPTIONS.user
+    const cameraLabel = cameraOption.label.toLowerCase()
     els.cameraError.hidden = false
     els.cameraError.textContent =
       error instanceof Error
         ? error.message
-        : "Camera access failed. Use HTTPS and allow the front camera."
+        : `Camera access failed. Use HTTPS and allow the ${cameraLabel}.`
     els.cameraPrompt.hidden = false
   } finally {
+    state.cameraStarting = false
     els.startCameraBtn.disabled = false
+    if (els.cameraSourceSelect) {
+      els.cameraSourceSelect.disabled = false
+    }
   }
 }
 
@@ -585,6 +678,12 @@ function registerEvents() {
     void startCamera()
   })
 
+  if (els.cameraSourceSelect) {
+    els.cameraSourceSelect.addEventListener("change", () => {
+      void handleCameraSourceChange()
+    })
+  }
+
   window.addEventListener("resize", syncCanvasToVideo)
   window.addEventListener("beforeunload", () => {
     void stopLiveResources()
@@ -593,4 +692,5 @@ function registerEvents() {
 
 renderExerciseCards()
 registerEvents()
+syncCameraPresentation()
 setScreen("picker")

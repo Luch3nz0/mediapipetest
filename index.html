@@ -89,11 +89,22 @@
         <p class="camera-error" id="camera-error" hidden></p>
       </div>
 
-      <div class="live-meta-grid">
-        <article class="meta-card">
-          <span>Camera view</span>
-          <strong id="view-hint-label">Side view</strong>
-          <p id="view-hint-copy"></p>
+	      <div class="live-meta-grid">
+	        <article class="meta-card">
+	          <span>Camera source</span>
+	          <strong>Lens selection</strong>
+	          <label class="camera-source-control" for="camera-source-select">
+	            <span class="camera-source-label">Choose front or back camera</span>
+	            <select id="camera-source-select" class="camera-select">
+	              <option value="user">Front camera</option>
+	              <option value="environment">Back camera</option>
+	            </select>
+	          </label>
+	        </article>
+	        <article class="meta-card">
+	          <span>Camera view</span>
+	          <strong id="view-hint-label">Side view</strong>
+	          <p id="view-hint-copy"></p>
         </article>
         <article class="meta-card">
           <span>Live checks</span>
