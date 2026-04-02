@@ -694,11 +694,22 @@ const PUSHUP_LANDMARK_INDEX = {
 }
 
 const PUSHUP_READY_COPY = {
-  "adjust-position": "Adjust your position so your full body is visible from the side.",
-  "move-into-frame": "Adjust your position so your full body is visible from the side.",
-  "turn-sideways": "Turn slightly sideways so your shoulder, hip, and ankle stay visible.",
-  "pushup-position": "Get into push-up position."
+  "adjust-position": "Keep your whole side visible in the front camera.",
+  "move-into-frame": "Keep your whole side visible in the front camera.",
+  "turn-sideways": "Turn into a clear side profile to the front camera.",
+  "pushup-position": "Face down, lock your arms, and line up your shoulders, hips, and ankles."
 }
+
+const PUSHUP_SIDE_SWITCH_MARGIN = 0.03
+const PUSHUP_READY_ELBOW_MIN = 148
+const PUSHUP_READY_BODY_MIN = 155
+const PUSHUP_SIDE_VIEW_RATIO_MAX = 0.32
+const PUSHUP_TRACKED_SIDE_MIN_VISIBILITY = 0.54
+const PUSHUP_POINT_MIN_VISIBILITY = 0.42
+const PUSHUP_SHOULDER_HIP_RATIO_MAX = 0.24
+const PUSHUP_HIP_ANKLE_RATIO_MAX = 0.26
+const PUSHUP_HORIZONTAL_RATIO_MAX = 0.34
+const PUSHUP_SHOULDER_ELBOW_STACK_RATIO_MAX = 0.24
 
 export class PushUpSessionEngine {
   constructor(protocol) {
@@ -1071,16 +1082,25 @@ export class PushUpSessionEngine {
       rightPoints.ankle.visibility
     ])
 
-    const candidateSide = leftMeanVisibility >= rightMeanVisibility ? "left" : "right"
+    const leftDepthScore = -average([leftPoints.shoulder.z, leftPoints.elbow.z, leftPoints.hip.z, leftPoints.ankle.z])
+    const rightDepthScore = -average([
+      rightPoints.shoulder.z,
+      rightPoints.elbow.z,
+      rightPoints.hip.z,
+      rightPoints.ankle.z
+    ])
+    const leftSelectorScore = leftMeanVisibility + leftDepthScore * 0.02
+    const rightSelectorScore = rightMeanVisibility + rightDepthScore * 0.02
+    const candidateSide = leftSelectorScore >= rightSelectorScore ? "left" : "right"
 
     if (this.trackedSide === null) {
       this.trackedSide = candidateSide
       this.pendingSide = null
       this.pendingSideFrames = 0
     } else if (candidateSide !== this.trackedSide) {
-      const candidateScore = candidateSide === "left" ? leftMeanVisibility : rightMeanVisibility
-      const currentScore = this.trackedSide === "left" ? leftMeanVisibility : rightMeanVisibility
-      if (candidateScore > currentScore + 0.04) {
+      const candidateScore = candidateSide === "left" ? leftSelectorScore : rightSelectorScore
+      const currentScore = this.trackedSide === "left" ? leftSelectorScore : rightSelectorScore
+      if (candidateScore > currentScore + PUSHUP_SIDE_SWITCH_MARGIN) {
         if (this.pendingSide === candidateSide) {
           this.pendingSideFrames += 1
         } else {
@@ -1116,12 +1136,18 @@ export class PushUpSessionEngine {
     const horizontalRatio = bodyVerticalSpread / bodyLength
     const shoulderHipDelta = Math.abs(sidePoints.shoulder.y - sidePoints.hip.y)
     const hipAnkleDelta = Math.abs(sidePoints.hip.y - sidePoints.ankle.y)
-    const isHorizontal = shoulderHipDelta < 0.12 && hipAnkleDelta < 0.12
+    const shoulderHipRatio = shoulderHipDelta / bodyLength
+    const hipAnkleRatio = hipAnkleDelta / bodyLength
+    const shoulderElbowStackRatio = Math.abs(sidePoints.shoulder.x - sidePoints.elbow.x) / bodyLength
+    const isHorizontal =
+      shoulderHipRatio <= PUSHUP_SHOULDER_HIP_RATIO_MAX &&
+      hipAnkleRatio <= PUSHUP_HIP_ANKLE_RATIO_MAX &&
+      horizontalRatio <= PUSHUP_HORIZONTAL_RATIO_MAX
 
     const requiredVisible =
-      trackedSideMean >= 0.62 &&
+      trackedSideMean >= PUSHUP_TRACKED_SIDE_MIN_VISIBILITY &&
       [sidePoints.shoulder, sidePoints.elbow, sidePoints.hip, sidePoints.ankle].every(
-        (point) => point.visibility >= 0.5
+        (point) => point.visibility >= PUSHUP_POINT_MIN_VISIBILITY
       )
 
     const fullBodyVisible =
@@ -1134,7 +1160,7 @@ export class PushUpSessionEngine {
 
     if (!fullBodyVisible) {
       reason = "adjust-position"
-    } else if (sideViewRatio > 0.2) {
+    } else if (sideViewRatio > PUSHUP_SIDE_VIEW_RATIO_MAX) {
       reason = "turn-sideways"
     } else if (!requiredVisible || trackedSideMean - farSideMean < 0.02) {
       reason = "adjust-position"
@@ -1143,14 +1169,16 @@ export class PushUpSessionEngine {
     const orientationAccepted =
       requiredVisible &&
       fullBodyVisible &&
-      sideViewRatio >= 0.01 &&
-      sideViewRatio <= 0.2 &&
-      (trackedSideMean - farSideMean >= 0.03 || sideViewRatio <= 0.12)
+      sideViewRatio <= PUSHUP_SIDE_VIEW_RATIO_MAX &&
+      (trackedSideMean - farSideMean >= -0.02 || sideViewRatio <= 0.16)
 
     const elbowAngle = this.smooth("elbowAngle", angleABC(sidePoints.shoulder, sidePoints.elbow, sidePoints.hip))
     const bodyAngle = this.smooth("bodyAngle", angleABC(sidePoints.shoulder, sidePoints.hip, sidePoints.ankle))
-    const startPostureOk = elbowAngle > 150 && bodyAngle >= 160 && isHorizontal
-    const canTrack = requiredVisible && fullBodyVisible && sideViewRatio <= 0.2
+    const armsStraight = elbowAngle >= PUSHUP_READY_ELBOW_MIN
+    const bodyStraight = bodyAngle >= PUSHUP_READY_BODY_MIN
+    const shoulderStacked = shoulderElbowStackRatio <= PUSHUP_SHOULDER_ELBOW_STACK_RATIO_MAX
+    const startPostureOk = armsStraight && bodyStraight && isHorizontal && shoulderStacked
+    const canTrack = requiredVisible && fullBodyVisible && sideViewRatio <= PUSHUP_SIDE_VIEW_RATIO_MAX
 
     if (!canTrack) {
       reason = reason === "turn-sideways" ? reason : "move-into-frame"
@@ -1173,13 +1201,19 @@ export class PushUpSessionEngine {
       metrics: {
         elbowAngle,
         bodyAngle,
+        armsStraight,
+        bodyStraight,
         isHorizontal,
         shoulderHipDelta,
         hipAnkleDelta,
+        shoulderHipRatio,
+        hipAnkleRatio,
         horizontalRatio,
         orientationAccepted,
         bodyLength,
-        sideViewRatio
+        sideViewRatio,
+        shoulderElbowStackRatio,
+        shoulderStacked
       }
     }
   }

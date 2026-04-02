@@ -51,18 +51,20 @@ const EXERCISES = {
     id: "pushup",
     title: "Push-up rule test",
     description:
-      "Uses the updated MediaPipe-optimized push-up rules with the heavy Pose Landmarker model for better floor-exercise accuracy.",
+      "Uses the heavy Pose Landmarker model with a front-camera side-profile setup tuned for floor push-ups.",
     tag: "Proxy elbow and body line",
     poseModelVariant: "heavy",
     protocol: { sets: 3, repsPerSet: 5, restSeconds: 15 },
-    viewLabel: "Low side or 3/4 floor view",
-    viewCopy: "Place the phone low enough to keep shoulder, elbow, hip, and ankle visible while your body stays parallel to the floor.",
-    ruleLabel: "Elbow proxy and body angle",
-    ruleCopy: "Rep detection uses the shoulder-elbow-hip proxy angle plus shoulder-hip-ankle alignment, with body-line cues prioritized ahead of depth and lockout.",
+    viewLabel: "Front camera side profile",
+    viewCopy:
+      "Use the front camera from a low side angle. Face the floor and keep your shoulder, elbow, hip, and ankle visible in one profile shot.",
+    ruleLabel: "Straight-arm plank start",
+    ruleCopy:
+      "The start position now looks for straight arms, a flat shoulder-hip-ankle line, and a clear side-profile plank before reps begin.",
     highlights: [
-      "Uses only shoulder, elbow, hip, and ankle landmarks from the clearest side.",
-      "Requires a straight body, extended arms, and a floor-parallel setup before counting starts.",
-      "Counts completed reps while still voicing alignment corrections during the movement."
+      "Uses the main shoulder, elbow, hip, and ankle trackers from the clearest profile side.",
+      "Requires straight arms plus aligned shoulders, hips, and ankles before the first rep starts.",
+      "Shows one clean tracker layer on top of the camera feed while voice cues guide alignment."
     ],
     renderVisual() {
       return `
@@ -347,19 +349,16 @@ function drawPushUpPose(context, landmarks, side) {
           ankle: toCanvasPoint(landmarks[28])
         }
 
-  const armColor = "#63d8ff"
-  const torsoColor = "#73f0b5"
-  const guideColor = "rgba(244, 247, 251, 0.18)"
+  const trackerColor = "#63d8ff"
 
-  drawSegment(context, pointMap.shoulder, pointMap.hip, torsoColor, 8)
-  drawSegment(context, pointMap.hip, pointMap.ankle, torsoColor, 8)
-  drawSegment(context, pointMap.shoulder, pointMap.elbow, armColor, 8)
-  drawSegment(context, pointMap.shoulder, pointMap.ankle, guideColor, 3, [8, 8])
+  drawSegment(context, pointMap.shoulder, pointMap.elbow, trackerColor, 8)
+  drawSegment(context, pointMap.shoulder, pointMap.hip, trackerColor, 8)
+  drawSegment(context, pointMap.hip, pointMap.ankle, trackerColor, 8)
 
-  drawJoint(context, pointMap.shoulder, torsoColor, "Shoulder", 12, -34)
-  drawJoint(context, pointMap.elbow, armColor, "Elbow", 12, 14)
-  drawJoint(context, pointMap.hip, torsoColor, "Hip", 12, -14)
-  drawJoint(context, pointMap.ankle, "#ffbd7a", "Ankle", 12, -34)
+  drawJoint(context, pointMap.shoulder, trackerColor, "Shoulder", 12, -34)
+  drawJoint(context, pointMap.elbow, trackerColor, "Elbow", 12, 14)
+  drawJoint(context, pointMap.hip, trackerColor, "Hip", 12, -14)
+  drawJoint(context, pointMap.ankle, trackerColor, "Ankle", 12, -34)
 }
 
 function drawPose(landmarks, trackedSide) {
